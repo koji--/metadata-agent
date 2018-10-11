@@ -68,9 +68,13 @@ class FakeServer {
   // responses over a hanging GET.
   void AllowStream(const std::string& path);
 
-  // Blocks until at least one client has connected to the given path.
+  // Returns the number of stream watchers for the given path.
+  int NumWatchers(const std::string& path);
+
+  // Blocks until at least min_watchers have connected to the given path.
   // Returns false if the timeout is reached with no client connections.
-  bool WaitForOneStreamWatcher(const std::string& path, time::seconds timeout);
+  bool WaitForStreamWatchers(
+      const std::string& path, int min_watchers, time::seconds timeout);
 
   // Sends a streaming response to all watchers for the given path.
   void SendStreamResponse(const std::string& path, const std::string& response);
@@ -95,7 +99,8 @@ class FakeServer {
     class Stream {
      public:
       void AddQueue(std::queue<std::string>* queue);
-      bool WaitForOneWatcher(time::seconds timeout);
+      int NumWatchers();
+      bool WaitForWatchers(int min_watchers, time::seconds timeout);
       void SendToAllQueues(const std::string& response);
       std::string GetNextResponse(std::queue<std::string>* queue);
 

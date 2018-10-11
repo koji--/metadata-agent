@@ -30,7 +30,7 @@ FakeServer::FakeServer()
     // is not documented).
     : server_(Server::options(handler_)
                   .thread_pool(
-                      std::make_shared<boost::network::utils::thread_pool>(5))
+                      std::make_shared<boost::network::utils::thread_pool>(6))
                   .address("127.0.0.1")
                   .port("")) {
   server_.listen();
@@ -69,14 +69,24 @@ void FakeServer::AllowStream(const std::string& path) {
   handler_.path_streams[path];
 }
 
-bool FakeServer::WaitForOneStreamWatcher(const std::string& path,
-                                         time::seconds timeout) {
+int FakeServer::NumWatchers(const std::string& path) {
   auto stream_it = handler_.path_streams.find(path);
   if (stream_it == handler_.path_streams.end()) {
     LOG(ERROR) << "Attempted to wait for an unknown path " << path;
     return false;
   }
-  return stream_it->second.WaitForOneWatcher(timeout);
+  return stream_it->second.NumWatchers();
+}
+
+bool FakeServer::WaitForStreamWatchers(const std::string& path,
+                                       int min_watchers,
+                                       time::seconds timeout) {
+  auto stream_it = handler_.path_streams.find(path);
+  if (stream_it == handler_.path_streams.end()) {
+    LOG(ERROR) << "Attempted to wait for an unknown path " << path;
+    return false;
+  }
+  return stream_it->second.WaitForWatchers(min_watchers, timeout);
 }
 
 void FakeServer::SendStreamResponse(const std::string& path,
@@ -191,15 +201,21 @@ void FakeServer::Handler::Stream::AddQueue(std::queue<std::string>* queue) {
     queues_.push_back(queue);
   }
   // Notify the condition variable to unblock any calls to
-  // WaitForOneStreamWatcher().
+  // WaitForStreamWatchers().
   cv_.notify_all();
 }
 
-bool FakeServer::Handler::Stream::WaitForOneWatcher(time::seconds timeout) {
+int FakeServer::Handler::Stream::NumWatchers() {
   std::unique_lock<std::mutex> queues_lock(mutex_);
-  return cv_.wait_for(queues_lock,
-                      timeout,
-                      [this]{ return queues_.size() > 0; });
+  return queues_.size();
+}
+
+bool FakeServer::Handler::Stream::WaitForWatchers(int min_watchers,
+                                                  time::seconds timeout) {
+  std::unique_lock<std::mutex> queues_lock(mutex_);
+  return cv_.wait_for(
+      queues_lock, timeout,
+      [this, min_watchers]{ return queues_.size() >= min_watchers; });
 }
 
 void FakeServer::Handler::Stream::SendToAllQueues(const std::string& response) {

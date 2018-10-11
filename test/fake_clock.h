@@ -48,6 +48,16 @@ class FakeClock {
   static time_point now_;
 };
 
+// Traits that allow basic_waitable_timer::async_wait() to work with a
+// FakeClock.
+template<typename Clock>
+struct WaitTraits {
+  static typename Clock::duration to_wait_duration(
+      const typename Clock::duration & d) {
+    return d < time::seconds(0.001) ? d : time::seconds(0.001);
+  }
+};
+
 }  // namespace testing
 }  // namespace google
 
