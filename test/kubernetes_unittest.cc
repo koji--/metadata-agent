@@ -1204,6 +1204,7 @@ class KubernetesTestFakeServerConfigurable
  protected:
   virtual bool ClusterLevel() = 0;
   virtual int WatchConnectionRetries() = 0;
+  virtual int WatchReconnectMaxStalenessSeconds() = 0;
   std::unique_ptr<Configuration> CreateConfig() override {
     return std::unique_ptr<Configuration>(
       new Configuration(std::istringstream(
@@ -1219,6 +1220,8 @@ class KubernetesTestFakeServerConfigurable
         "MetadataIngestionRawContentVersion: TestVersion\n"
         "KubernetesUpdaterWatchConnectionRetries: "
         + std::to_string(WatchConnectionRetries()) + "\n"
+        "KubernetesUpdaterWatchReconnectMaxStalenessSeconds: "
+        + std::to_string(WatchReconnectMaxStalenessSeconds()) + "\n"
         "KubernetesUseWatch: true\n"
       )));
   }
@@ -1229,6 +1232,7 @@ class KubernetesTestFakeServerOneWatchRetryNodeLevelMetadata
  protected:
   bool ClusterLevel() override { return false; }
   int WatchConnectionRetries() override { return 1; }
+  int WatchReconnectMaxStalenessSeconds () override { return 300; }
 };
 
 class KubernetesTestFakeServerOneWatchRetryClusterLevelMetadata
@@ -1236,6 +1240,7 @@ class KubernetesTestFakeServerOneWatchRetryClusterLevelMetadata
  protected:
   bool ClusterLevel() override { return true; }
   int WatchConnectionRetries() override { return 1; }
+  int WatchReconnectMaxStalenessSeconds () override { return 300; }
 };
 
 class KubernetesTestFakeServerThreeWatchRetriesNodeLevelMetadata
@@ -1243,6 +1248,7 @@ class KubernetesTestFakeServerThreeWatchRetriesNodeLevelMetadata
  protected:
   bool ClusterLevel() override { return false; }
   int WatchConnectionRetries() override { return 3; }
+  int WatchReconnectMaxStalenessSeconds () override { return 0; }
 };
 
 namespace {
