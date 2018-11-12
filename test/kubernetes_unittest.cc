@@ -1199,27 +1199,22 @@ TEST_F(KubernetesTestFakeServer, MetadataQuery) {
   EXPECT_EQ(pod_metadata->ToString(), m[3].metadata().metadata->ToString());
 }
 
-class KubernetesTestFakeServerConfigurable
-    : public KubernetesTestFakeServer {
+class KubernetesTestFakeServerConfigurable : public KubernetesTestFakeServer {
  protected:
-  virtual bool ClusterLevel() = 0;
-  virtual int WatchConnectionRetries() = 0;
+  virtual std::string ExtraConfig() = 0;
   std::unique_ptr<Configuration> CreateConfig() override {
     return std::unique_ptr<Configuration>(
       new Configuration(std::istringstream(
         "InstanceId: TestID\n"
         "InstanceResourceType: gce_instance\n"
         "InstanceZone: TestZone\n"
-        "KubernetesClusterLevelMetadata: "
-        + std::string(ClusterLevel() ? "true" : "false") + "\n"
         "KubernetesClusterLocation: TestClusterLocation\n"
         "KubernetesClusterName: TestClusterName\n"
         "KubernetesEndpointHost: " + server->GetUrl() + "\n"
         "KubernetesNodeName: TestNodeName\n"
         "MetadataIngestionRawContentVersion: TestVersion\n"
-        "KubernetesUpdaterWatchConnectionRetries: "
-        + std::to_string(WatchConnectionRetries()) + "\n"
         "KubernetesUseWatch: true\n"
+        + ExtraConfig()
       )));
   }
 };
@@ -1227,22 +1222,31 @@ class KubernetesTestFakeServerConfigurable
 class KubernetesTestFakeServerOneWatchRetryNodeLevelMetadata
     : public KubernetesTestFakeServerConfigurable {
  protected:
-  bool ClusterLevel() override { return false; }
-  int WatchConnectionRetries() override { return 1; }
+  std::string ExtraConfig() override {
+    return
+      "KubernetesClusterLevelMetadata: false\n"
+      "KubernetesUpdaterWatchConnectionRetries: 1\n";
+  }
 };
 
 class KubernetesTestFakeServerOneWatchRetryClusterLevelMetadata
     : public KubernetesTestFakeServerConfigurable {
  protected:
-  bool ClusterLevel() override { return true; }
-  int WatchConnectionRetries() override { return 1; }
+  std::string ExtraConfig() override {
+    return
+      "KubernetesClusterLevelMetadata: true\n"
+      "KubernetesUpdaterWatchConnectionRetries: 1\n";
+  }
 };
 
 class KubernetesTestFakeServerThreeWatchRetriesNodeLevelMetadata
     : public KubernetesTestFakeServerConfigurable {
  protected:
-  bool ClusterLevel() override { return false; }
-  int WatchConnectionRetries() override { return 3; }
+  std::string ExtraConfig() override {
+    return
+      "KubernetesClusterLevelMetadata: false\n"
+      "KubernetesUpdaterWatchConnectionRetries: 3\n";
+  }
 };
 
 namespace {
@@ -1270,7 +1274,8 @@ bool WaitForNewerCollectionTimestamp(const MetadataStore& store,
 // to the store.
 void TestNodes(testing::FakeServer& server, MetadataStore& store,
                const std::string& nodes_watch_path) {
-  ASSERT_TRUE(server.WaitForStreamWatchers(nodes_watch_path, 1, time::seconds(3)));
+  ASSERT_TRUE(
+      server.WaitForStreamWatchers(nodes_watch_path, 1, time::seconds(3)));
   json::value node1 = json::object({
     {"metadata", json::object({
       {"name", json::string("TestNodeName1")},
@@ -1363,7 +1368,8 @@ void TestNodes(testing::FakeServer& server, MetadataStore& store,
 // to the store.
 void TestPods(testing::FakeServer& server, MetadataStore& store,
               const std::string& pods_watch_path) {
-  ASSERT_TRUE(server.WaitForStreamWatchers(pods_watch_path, 1, time::seconds(3)));
+  ASSERT_TRUE(
+      server.WaitForStreamWatchers(pods_watch_path, 1, time::seconds(3)));
   json::value pod1 = json::object({
     {"metadata", json::object({
       {"name", json::string("TestPodName1")},
@@ -1589,8 +1595,10 @@ void TestPods(testing::FakeServer& server, MetadataStore& store,
 void TestServicesAndEndpoints(testing::FakeServer& server, MetadataStore& store,
                               const std::string& services_watch_path,
                               const std::string& endpoints_watch_path) {
-  ASSERT_TRUE(server.WaitForStreamWatchers(services_watch_path, 1, time::seconds(3)));
-  ASSERT_TRUE(server.WaitForStreamWatchers(endpoints_watch_path, 1, time::seconds(3)));
+  ASSERT_TRUE(
+      server.WaitForStreamWatchers(services_watch_path, 1, time::seconds(3)));
+  ASSERT_TRUE(
+      server.WaitForStreamWatchers(endpoints_watch_path, 1, time::seconds(3)));
   json::value service1 = json::object({
     {"metadata", json::object({
       {"name", json::string("testname1")},
@@ -1925,9 +1933,7 @@ class FakeKubernetesUpdater : public KubernetesUpdater {
                         MetadataStore* store)
     : KubernetesUpdater(
           config, health_checker, store,
-          WaitableTimerFactoryImpl<
-              testing::FakeClock,
-              testing::WaitTraits<testing::FakeClock>>::New()) {}
+          DelayTimerFactoryImpl<testing::FakeClock>::New()) {}
 };
 }
 
@@ -1937,6 +1943,7 @@ TEST_F(KubernetesTestFakeServerThreeWatchRetriesNodeLevelMetadata,
     "/api/v1/watch/nodes/TestNodeName?watch=true";
   const std::string pods_watch_path =
     "/api/v1/pods?fieldSelector=spec.nodeName%3DTestNodeName&watch=true";
+  const auto timeout = time::seconds(3);
 
   // Create a fake server representing the Kubernetes master.
   server->SetResponse("/api/v1/nodes?limit=1", "{}");
@@ -1949,25 +1956,24 @@ TEST_F(KubernetesTestFakeServerThreeWatchRetriesNodeLevelMetadata,
   updater.Start();
 
   // Wait for connection #1.
-  const auto timeout = time::seconds(3);
   ASSERT_TRUE(server->WaitForStreamWatchers(nodes_watch_path, 1, timeout));
   ASSERT_TRUE(server->WaitForStreamWatchers(pods_watch_path, 1, timeout));
 
-  // Advance fake clock only 30 min, not enough to trigger reconnection.
+  // Advance fake clock only 30 minutes, not enough to trigger reconnection.
   testing::FakeClock::Advance(std::chrono::seconds(1800));
   EXPECT_EQ(1, server->NumWatchers(nodes_watch_path));
   EXPECT_EQ(1, server->NumWatchers(pods_watch_path));
 
-  // Advance another 30 min to trigger connection #2.
+  // Advance another 30 minutes to trigger connection #2.
   //
   // NOTE: The FakeServer doesn't clean up state when client
-  // connections are closed via io_service.stop(), so that's why it 2
-  // watchers after the reconnection..
+  // connections are closed via io_service.stop(), so that's why it
+  // has 2 watchers after the reconnection.
   testing::FakeClock::Advance(std::chrono::seconds(1800));
   ASSERT_TRUE(server->WaitForStreamWatchers(nodes_watch_path, 2, timeout));
   ASSERT_TRUE(server->WaitForStreamWatchers(pods_watch_path, 2, timeout));
 
-  // Advance 60 min to trigger connection #3.
+  // Advance 60 minutes to trigger connection #3.
   testing::FakeClock::Advance(std::chrono::seconds(3600));
   ASSERT_TRUE(server->WaitForStreamWatchers(nodes_watch_path, 3, timeout));
   ASSERT_TRUE(server->WaitForStreamWatchers(pods_watch_path, 3, timeout));
