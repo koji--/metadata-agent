@@ -71,10 +71,13 @@ class FakeServer {
   // Returns the number of stream watchers for the given path.
   int NumWatchers(const std::string& path);
 
-  // Blocks until at least min_watchers have connected to the given path.
-  // Returns false if the timeout is reached with no client connections.
-  bool WaitForStreamWatchers(
-      const std::string& path, int min_watchers, time::seconds timeout);
+  // Blocks until the total number of connections (including
+  // connections that have since been closed) to the given path has
+  // reached at least min_connections.  Returns false if the timeout
+  // is reached before seeing enough client connections.
+  bool WaitForMinTotalConnections(const std::string& path,
+                                  int min_connections,
+                                  time::seconds timeout);
 
   // Sends a streaming response to all watchers for the given path.
   void SendStreamResponse(const std::string& path, const std::string& response);
@@ -98,9 +101,11 @@ class FakeServer {
     // take ownership.
     class Stream {
      public:
+      Stream() : connection_counter_(0) {}
       void AddQueue(std::queue<std::string>* queue);
       int NumWatchers();
-      bool WaitForWatchers(int min_watchers, time::seconds timeout);
+      bool WaitForMinTotalConnections(int min_connections,
+                                      time::seconds timeout);
       void SendToAllQueues(const std::string& response);
       std::string GetNextResponse(std::queue<std::string>* queue);
 
@@ -109,6 +114,7 @@ class FakeServer {
       std::condition_variable cv_;
       // The vector elements are not owned by the Stream object.
       std::vector<std::queue<std::string>*> queues_;
+      int connection_counter_;
     };
 
     void operator()(Server::request const &request,

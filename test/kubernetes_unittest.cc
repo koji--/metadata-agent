@@ -1275,7 +1275,7 @@ bool WaitForNewerCollectionTimestamp(const MetadataStore& store,
 void TestNodes(testing::FakeServer& server, MetadataStore& store,
                const std::string& nodes_watch_path) {
   ASSERT_TRUE(
-      server.WaitForStreamWatchers(nodes_watch_path, 1, time::seconds(3)));
+      server.WaitForMinTotalConnections(nodes_watch_path, 1, time::seconds(3)));
   json::value node1 = json::object({
     {"metadata", json::object({
       {"name", json::string("TestNodeName1")},
@@ -1369,7 +1369,7 @@ void TestNodes(testing::FakeServer& server, MetadataStore& store,
 void TestPods(testing::FakeServer& server, MetadataStore& store,
               const std::string& pods_watch_path) {
   ASSERT_TRUE(
-      server.WaitForStreamWatchers(pods_watch_path, 1, time::seconds(3)));
+      server.WaitForMinTotalConnections(pods_watch_path, 1, time::seconds(3)));
   json::value pod1 = json::object({
     {"metadata", json::object({
       {"name", json::string("TestPodName1")},
@@ -1595,10 +1595,10 @@ void TestPods(testing::FakeServer& server, MetadataStore& store,
 void TestServicesAndEndpoints(testing::FakeServer& server, MetadataStore& store,
                               const std::string& services_watch_path,
                               const std::string& endpoints_watch_path) {
-  ASSERT_TRUE(
-      server.WaitForStreamWatchers(services_watch_path, 1, time::seconds(3)));
-  ASSERT_TRUE(
-      server.WaitForStreamWatchers(endpoints_watch_path, 1, time::seconds(3)));
+  ASSERT_TRUE(server.WaitForMinTotalConnections(
+      services_watch_path, 1, time::seconds(3)));
+  ASSERT_TRUE(server.WaitForMinTotalConnections(
+      endpoints_watch_path, 1, time::seconds(3)));
   json::value service1 = json::object({
     {"metadata", json::object({
       {"name", json::string("testname1")},
@@ -1956,8 +1956,8 @@ TEST_F(KubernetesTestFakeServerThreeWatchRetriesNodeLevelMetadata,
   updater.Start();
 
   // Wait for connection #1.
-  ASSERT_TRUE(server->WaitForStreamWatchers(nodes_watch_path, 1, timeout));
-  ASSERT_TRUE(server->WaitForStreamWatchers(pods_watch_path, 1, timeout));
+  ASSERT_TRUE(server->WaitForMinTotalConnections(nodes_watch_path, 1, timeout));
+  ASSERT_TRUE(server->WaitForMinTotalConnections(pods_watch_path, 1, timeout));
 
   // Advance fake clock only 30 minutes, not enough to trigger reconnection.
   testing::FakeClock::Advance(std::chrono::seconds(1800));
@@ -1965,18 +1965,14 @@ TEST_F(KubernetesTestFakeServerThreeWatchRetriesNodeLevelMetadata,
   EXPECT_EQ(1, server->NumWatchers(pods_watch_path));
 
   // Advance another 30 minutes to trigger connection #2.
-  //
-  // NOTE: The FakeServer doesn't clean up state when client
-  // connections are closed via io_service.stop(), so that's why it
-  // has 2 watchers after the reconnection.
   testing::FakeClock::Advance(std::chrono::seconds(1800));
-  ASSERT_TRUE(server->WaitForStreamWatchers(nodes_watch_path, 2, timeout));
-  ASSERT_TRUE(server->WaitForStreamWatchers(pods_watch_path, 2, timeout));
+  ASSERT_TRUE(server->WaitForMinTotalConnections(nodes_watch_path, 2, timeout));
+  ASSERT_TRUE(server->WaitForMinTotalConnections(pods_watch_path, 2, timeout));
 
   // Advance 60 minutes to trigger connection #3.
   testing::FakeClock::Advance(std::chrono::seconds(3600));
-  ASSERT_TRUE(server->WaitForStreamWatchers(nodes_watch_path, 3, timeout));
-  ASSERT_TRUE(server->WaitForStreamWatchers(pods_watch_path, 3, timeout));
+  ASSERT_TRUE(server->WaitForMinTotalConnections(nodes_watch_path, 3, timeout));
+  ASSERT_TRUE(server->WaitForMinTotalConnections(pods_watch_path, 3, timeout));
 
   // Terminate the hanging GETs on the server so that the updater will finish.
   server->TerminateAllStreams();
