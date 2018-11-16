@@ -160,3 +160,5 @@ This is the Stackdriver Metadata agent.
        $ ./metadatad sample_agent_config.yaml
 
    The default credentials location in the sample configuration is `/tmp/token.json`.
+
+forked by koji_magi
